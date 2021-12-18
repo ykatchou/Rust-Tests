@@ -1,90 +1,100 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, rc::{Rc, Weak}, fmt::{Display, Formatter, Result}};
 
-pub enum NodeType{
-    Empty = 0,
-    PayRule = 10,
-    PayValue = 20,
-    PayVariable = 30,
-    PayAbsence = 40,
-    GaData = 50,
+pub struct Node<T> {
+    pub data: Rc<T>,
 }
 
-pub enum Dirty{
-    Clean = 0,
-    Touched = 1,
+pub struct Vertex<T> {
+    source: Weak<Node<T>>,
+    target: Weak<Node<T>>,
 }
 
-pub struct Node{
-    kind:NodeType,
-    name:Box<String>,
-    family:Box<String>,
-    subfamily:Box<String>,
-    regulation:u64,
-    
-    //Grey is used to temporary flag a node during graph browsing.
-    grey:Dirty,
+pub struct Graph<T> {
+    nodes: BTreeMap<String, Rc<Node<T>>>,
+    vertices: Vec<Rc<Vertex<T>>>,
 }
 
-pub struct Vertex{
-    source:String, 
-    target:String, 
-    grey:Dirty,
-}
-
-pub struct Graph{
-    nodes: BTreeMap::<String, Node>,
-    vertices: Vec::<Vertex>,
-}
-
-
-impl Node{
-    pub fn new(p_kind:NodeType, p_name:&str, p_family:&str, p_subfamily:&str, p_regulation:u64) -> Node{
-        Node{
-            kind: p_kind,
-            name: Box::new(p_name.to_string()),
-            family: Box::new(p_family.to_string()),
-            subfamily: Box::new(p_subfamily.to_string()),
-            grey: Dirty::Clean,
-            regulation: 0,
+impl<T> Node<T> {
+    pub fn new(p_data: Rc<T>) -> Node<T> {
+        Node {
+            data: p_data,
         }
     }
 }
 
+impl<T: Display> Display for Node<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "Node => {}", self.data.as_ref())
+    }
+}
 
-impl Vertex{
-    pub fn new(source_node:&str, target_node:&str) -> Vertex{
-        Vertex{
-            source: source_node.to_string(),
-            target: target_node.to_string(),
-            grey: Dirty::Clean,
+impl<T> Vertex<T> {
+    pub fn new(source_node: Weak<Node<T>>, target_node: Weak<Node<T>>) -> Vertex<T> {
+        Vertex {
+            source: source_node,
+            target: target_node,
         }
     }
 }
 
-impl Graph{
-    pub fn new() -> Graph{
-        Graph{
+impl<T: Display> Display for Vertex<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "Vertex: {} => {}", self.source.upgrade().as_ref().unwrap(), self.target.upgrade().as_ref().unwrap())
+    }
+}
+
+impl<T: Copy + Display + Ord> Graph<T> {
+    pub fn new() -> Graph<T> {
+        Graph {
             nodes: BTreeMap::new(),
-            vertices: Vec::new()
+            vertices: Vec::new(),
         }
     }
-    pub fn create_node(&mut self, name:&str){
-        self.nodes.insert("paie1".to_string(), Node::new(NodeType::PayRule, "rule1", "fam1", "subfam1", 0));
+
+    pub fn create_node(&mut self, data: T) -> Rc<Node<T>> {
+        let node = Rc::new(Node::new(Rc::new(data)));
+
+        self.nodes.insert(data.to_string(), node.clone());
+
+        return node;
     }
 
-    pub fn get_node(&mut self, name:&str) -> &mut Node{
-        if self.nodes.contains_key(name) {
-            let n = self.nodes.get_mut(name);
-            match n{
-                Some(x) => x,
-                None => panic!("Node not found")
+    pub fn get_node(& self, data: T) -> &Rc<Node<T>> {
+        if self.nodes.contains_key(&data.to_string()) {
+            if let Some(xx) = self.nodes.get(&data.to_string()) {
+                return xx;
+            } else {
+                panic!("Node not found");
             }
-        }else{
+        } else {
             panic!("Node not found")
         }
     }
 
-    pub fn create_vertex(&mut self, source_node_name:&str, target_node_name:&str){
-        self.vertices.push(Vertex::new(source_node_name, target_node_name));
+    pub fn create_vertex(&mut self, source_node_name: Weak<Node<T>>, target_node_name: Weak<Node<T>>) {
+        self.vertices
+            .push(Rc::new(Vertex::new(source_node_name, target_node_name)));
+    }
+
+    pub fn get_vertex_from(& self, node: Weak<Node<T>>) -> Vec<Weak<Vertex<T>>> {
+        let mut result = Vec::new();
+
+        for vertex in &self.vertices {
+            if let Some(src_node) = vertex.source.upgrade() {
+                if Rc::ptr_eq(&src_node, &node.upgrade().expect("Invalid reference to a node")) {
+                    result.push(Rc::downgrade(vertex));
+
+                    continue;
+                }
+            }
+
+            if let Some(target_node) = vertex.target.upgrade() {
+                if Rc::ptr_eq(&target_node, &node.upgrade().expect("Invalid reference to a node")) {
+                    result.push(Rc::downgrade(vertex));
+                }
+            }
+        }
+
+        return result;
     }
 }
